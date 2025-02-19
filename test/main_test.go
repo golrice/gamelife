@@ -1,9 +1,9 @@
-package main
+package test
 
 import (
 	"flag"
 	"fmt"
-	"os"
+	"testing"
 
 	"github.com/golrice/gamelife/internal/config"
 	"github.com/golrice/gamelife/internal/engine"
@@ -11,24 +11,18 @@ import (
 	"github.com/golrice/gamelife/internal/qrcode"
 )
 
-func main() {
-	signatureFlag := flag.String("signature", "", "用户的签名")
-	formatFlag := flag.String("format", "png", "保存格式")
-	sizeFlag := flag.Int("size", 255, "大小")
-	maxiterFlag := flag.Int("iter", 20, "大小")
+func TestMain(t *testing.T) {
+	signatureFlag := "123"
+	formatFlag := "png"
+	sizeFlag := 255
+	maxiterFlag := 100000
 	flag.Parse()
 
-	fmt.Println("signature = ", *signatureFlag)
-
-	config := config.NewConfig(*signatureFlag, *formatFlag, *sizeFlag, *maxiterFlag)
+	config := config.NewConfig(signatureFlag, formatFlag, sizeFlag, maxiterFlag)
 
 	bitmap, err := qrcode.GenerateQrcode(config)
 	if err != nil {
 		panic(err)
-	}
-	if bitmap == nil {
-		fmt.Println("empty bitmap")
-		os.Exit(0)
 	}
 
 	img := imageutil.NewImage(bitmap, len(bitmap), len(bitmap[0]))

@@ -3,77 +3,119 @@ package engine
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"image"
-	"image/color"
+	"fmt"
 	"sync"
 
 	"github.com/golrice/gamelife/internal/config"
+	"github.com/golrice/gamelife/internal/imageutil"
+)
+
+const (
+	consumerCount = 5
+	bufferSize    = 10
 )
 
 type Grid struct {
-	Width  int
-	Height int
-	Cells  [][]bool
-	mu     sync.RWMutex // 用于并发安全
+	Width   int
+	Height  int
+	Cells   [][]bool
+	pvCells [][]bool
+	mu      sync.RWMutex // 用于并发安全
+}
+
+type chanInArg struct {
+	PvCells  [][]bool
+	OutCells [][]bool
+	X        int
+	Y        int
+	Width    int
+	Height   int
 }
 
 func NewGrid(width int, height int, cells [][]bool) *Grid {
+	cellsCopy := make([][]bool, len(cells))
+	for i, row := range cells {
+		cellsCopy[i] = make([]bool, len(row))
+		copy(cellsCopy[i], row)
+	}
+
 	return &Grid{
-		Width:  width,
-		Height: height,
-		Cells:  cells,
-		mu:     sync.RWMutex{},
+		Width:   width,
+		Height:  height,
+		Cells:   cells,
+		pvCells: cellsCopy,
+		mu:      sync.RWMutex{},
 	}
 }
 
-func ImageToGrid(img image.Image) *Grid {
-	bounds := img.Bounds()
-	width, height := bounds.Max.X, bounds.Max.Y
+func ImageToGrid(img *imageutil.Image) *Grid {
+	width, height := img.Width, img.Height
 
-	cells := make([][]bool, height)
-	for y := 0; y < height; y++ {
-		cells[y] = make([]bool, width)
-		for x := 0; x < width; x++ {
-			// 获取像素颜色
-			r, g, b, _ := img.At(x, y).RGBA()
-			gray := (r + g + b) / 3 // 计算灰度值
-			// 黑色像素映射为 true，白色像素映射为 false
-			cells[y][x] = gray < 32768
+	BitmapCopy := make([][]bool, len(img.Bitmap))
+	for i, row := range img.Bitmap {
+		BitmapCopy[i] = make([]bool, len(row))
+		copy(BitmapCopy[i], row)
+	}
+
+	for i := range BitmapCopy {
+		for j := range BitmapCopy[i] {
+			BitmapCopy[i][j] = !BitmapCopy[i][j]
 		}
 	}
 
-	return NewGrid(width, height, cells)
+	return NewGrid(width, height, BitmapCopy)
 }
 
-func (g *Grid) ToImage() image.Image {
-	img := image.NewRGBA(image.Rect(0, 0, g.Width, g.Height))
+func (g *Grid) ToImage() *imageutil.Image {
+	CellsCopy := make([][]bool, len(g.Cells))
+	for i, row := range g.Cells {
+		CellsCopy[i] = make([]bool, len(row))
+		copy(CellsCopy[i], row)
+	}
 
-	for y := 0; y < g.Height; y++ {
-		for x := 0; x < g.Width; x++ {
-			if g.Cells[y][x] {
-				img.Set(x, y, color.Black)
-			} else {
-				img.Set(x, y, color.White)
-			}
+	for i := range CellsCopy {
+		for j := range CellsCopy[i] {
+			CellsCopy[i][j] = !CellsCopy[i][j]
 		}
 	}
 
-	return img
+	return imageutil.NewImage(CellsCopy, g.Width, g.Height)
 }
 
 func (g *Grid) ToStable(config *config.Config) bool {
-	history := make([][][]bool, 0)
+	historyHash := make(map[string]struct{}, 0)
+	inputChannel := make(chan chanInArg, bufferSize)
+	var wg sync.WaitGroup
+	var packet sync.WaitGroup
+	defer close(inputChannel)
+
+	wg.Add(consumerCount)
+	for i := 0; i < consumerCount; i++ {
+		go consumer(inputChannel, &wg, &packet)
+	}
 
 	for i := 0; i < config.MaxIter; i++ {
-		if CheckStable(history) {
+		g.NextGeneration(inputChannel, &packet)
+
+		curHash := MatrixToHash(g.Cells)
+		if _, ok := historyHash[curHash]; ok {
+			fmt.Println("after", i, "round, we reach stable")
 			return true
 		}
-
-		g.NextGeneration()
-		history = append(history, g.Cells)
+		historyHash[curHash] = struct{}{}
 	}
 
 	return false
+}
+
+func consumer(input <-chan chanInArg, wg *sync.WaitGroup, packet *sync.WaitGroup) {
+	defer wg.Done()
+
+	for item := range input {
+		black := safeCell(item.PvCells, item.X, item.Y, item.Width, item.Height)
+		item.OutCells[item.Y][item.X] = black
+		packet.Done()
+	}
 }
 
 func (g *Grid) GetCell(x, y int) bool {
@@ -118,57 +160,56 @@ func safeCell(cells [][]bool, x, y int, width, height int) bool {
 		}
 	}
 
-	return 2 <= neighbors && neighbors <= 3
+	if cells[y][x] {
+		neighbors--
+	}
+
+	return neighbors == 3 || (cells[y][x] && neighbors == 2)
 }
 
-func (g *Grid) NextGeneration() {
+func (g *Grid) NextGeneration(intput chan<- chanInArg, packet *sync.WaitGroup) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	cells := make([][]bool, g.Height)
-	for y := range g.Cells {
-		cells[y] = make([]bool, g.Width)
-		copy(cells[y], g.Cells[y])
-	}
-
 	for y := 0; y < g.Height; y++ {
 		for x := 0; x < g.Width; x++ {
-			g.Cells[y][x] = safeCell(cells, x, y, g.Width, g.Height)
+			packet.Add(1)
+			intput <- chanInArg{
+				PvCells:  g.pvCells,
+				OutCells: g.Cells,
+				X:        x,
+				Y:        y,
+				Width:    g.Width,
+				Height:   g.Height,
+			}
 		}
 	}
-}
 
-func CheckStable(history [][][]bool) bool {
-	// 检查周期性震荡
-	hm := make(map[string]struct{})
-	for _, g := range history {
-		hs := MatrixToHash(g)
-		if _, ok := hm[hs]; ok {
-			return true
-		}
+	packet.Wait()
 
-		hm[hs] = struct{}{}
+	for i, row := range g.Cells {
+		copy(g.pvCells[i], row)
 	}
 
-	return false
 }
 
 func MatrixToHash(matrix [][]bool) string {
-	var data []byte
-
+	hasher := sha256.New()
 	for _, row := range matrix {
-		for _, value := range row {
-			v := 0
+		var packed uint64 = 0
+		for i, value := range row {
 			if value {
-				v = 1
+				packed |= 1 << (i % 64)
 			}
-			data = append(data, byte(v))
+			// 每 64 位写入一次
+			if i%64 == 63 || i == len(row)-1 {
+				hasher.Write([]byte{byte(packed), byte(packed >> 8), byte(packed >> 16), byte(packed >> 24),
+					byte(packed >> 32), byte(packed >> 40), byte(packed >> 48), byte(packed >> 56)})
+				packed = 0
+			}
 		}
 	}
-
-	hash := sha256.Sum256(data)
-
-	return hex.EncodeToString(hash[:])
+	return hex.EncodeToString(hasher.Sum(nil))
 }
 
 func validPosition(x, y int, cells [][]bool) bool {

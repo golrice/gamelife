@@ -8,23 +8,54 @@ import (
 	"image/png"
 	"os"
 
+	"github.com/disintegration/imaging"
 	"github.com/golrice/gamelife/internal/config"
 )
 
-func SaveImg(img image.Image, config *config.Config) (err error) {
+type Image struct {
+	Bitmap [][]bool
+	Width  int
+	Height int
+}
+
+func NewImage(bitmap [][]bool, width, height int) *Image {
+	return &Image{
+		Bitmap: bitmap,
+		Width:  width,
+		Height: height,
+	}
+}
+
+func SaveImg(img *Image, config *config.Config) (err error) {
+	if img == nil {
+		return fmt.Errorf("img is nil")
+	}
+
 	file, err := os.Create(config.Signature + "." + config.Format)
 	if err != nil {
 		return err
 	}
+	defer file.Close()
+
+	originContainer := image.NewRGBA(image.Rect(0, 0, img.Width, img.Height))
+	for y := 0; y < img.Height; y++ {
+		for x := 0; x < img.Width; x++ {
+			if img.Bitmap[y][x] {
+				originContainer.Set(x, y, color.White)
+			}
+		}
+	}
+
+	resizedImg := imaging.Resize(originContainer, config.QRSize, config.QRSize, imaging.NearestNeighbor)
 
 	switch config.Format {
 	case "png":
-		err = png.Encode(file, img)
+		err = png.Encode(file, resizedImg)
 		if err != nil {
 			return fmt.Errorf("PNG 编码失败: %w", err)
 		}
 	case "jpeg":
-		err = jpeg.Encode(file, img, nil) // 第三个参数是可选的编码选项
+		err = jpeg.Encode(file, resizedImg, nil) // 第三个参数是可选的编码选项
 		if err != nil {
 			return fmt.Errorf("JPEG 编码失败: %w", err)
 		}
@@ -33,48 +64,4 @@ func SaveImg(img image.Image, config *config.Config) (err error) {
 	}
 
 	return nil
-}
-
-func isBlack(c color.Color) bool {
-	r, g, b, _ := c.RGBA()
-	gray := (r + g + b) / 3
-	return gray < 32768 // 灰度值小于阈值视为黑色
-}
-
-func DetectModuleSize(img image.Image) int {
-	bounds := img.Bounds()
-	width, height := bounds.Max.X, bounds.Max.Y
-
-	// 检查左上角的定位图案
-	x, y := 0, 0
-	for ; x < width; x++ {
-		find := false
-		for tempy := 0; tempy < height-1; tempy++ {
-			if isBlack(img.At(x, tempy)) {
-				y = tempy
-				find = true
-				break
-			}
-		}
-		if find {
-			break
-		}
-	}
-
-	tempx := x
-
-	for x < width && isBlack(img.At(x, y)) {
-		x++
-	}
-
-	tempx = (tempx + x) / 2
-	moduleSize := y // 定位图案的宽度即为模块大小
-	for tempy := y; y < height; tempy++ {
-		if !isBlack(img.At(tempx, tempy)) {
-			moduleSize = tempy - y
-			break
-		}
-	}
-
-	return moduleSize
 }

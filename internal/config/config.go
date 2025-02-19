@@ -8,12 +8,12 @@ type Config struct {
 	StabilizeGen int // 稳定判断代数
 }
 
-func NewConfig(signature string, format string, size int) *Config {
+func NewConfig(signature string, format string, size int, maxiter int) *Config {
 	return &Config{
 		Signature:    signature,
 		Format:       format,
 		QRSize:       size,
-		MaxIter:      10,
+		MaxIter:      maxiter,
 		StabilizeGen: 10,
 	}
 }

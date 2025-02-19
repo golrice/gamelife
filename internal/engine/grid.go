@@ -3,13 +3,11 @@ package engine
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"image"
 	"image/color"
 	"sync"
 
 	"github.com/golrice/gamelife/internal/config"
-	"github.com/golrice/gamelife/internal/imageutil"
 )
 
 type Grid struct {
@@ -68,15 +66,6 @@ func (g *Grid) ToStable(config *config.Config) bool {
 
 	for i := 0; i < config.MaxIter; i++ {
 		if CheckStable(history) {
-			// 将历史都打印出来
-			s := config.Signature
-			for each := range history {
-				grid := NewGrid(g.Width, g.Height, history[each])
-				img := grid.ToImage()
-				config.Signature = fmt.Sprint(each)
-				imageutil.SaveImg(img, config)
-			}
-			config.Signature = s
 			return true
 		}
 

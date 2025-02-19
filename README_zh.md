@@ -1,6 +1,6 @@
 # GameLife: QR码与康威生命游戏的结合
 
-- [中文版本](README_CN.md)
+- [中文版本](README_zh.md)
 - [English version](README.md)
 
 ## 概述

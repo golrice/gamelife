@@ -1,6 +1,6 @@
 # GameLife: QR Code and Conway's Game of Life Integration
 
-- [中文版本](README_CN.md)
+- [中文版本](README_zh.md)
 - [English version](README.md)
 
 ## Overview

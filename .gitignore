@@ -24,5 +24,10 @@ go.work.sum
 # env file
 .env
 
-# test jpeg file
+# bin file
+bin/
+
+# test generate file
 *.jpeg
+*.png 
+*.mp4

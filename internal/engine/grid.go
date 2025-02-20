@@ -1,11 +1,17 @@
 package engine
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
+	"os/exec"
 	"sync"
 
+	"github.com/disintegration/imaging"
 	"github.com/golrice/gamelife/internal/config"
 	"github.com/golrice/gamelife/internal/imageutil"
 )
@@ -57,12 +63,6 @@ func ImageToGrid(img *imageutil.Image) *Grid {
 		copy(BitmapCopy[i], row)
 	}
 
-	for i := range BitmapCopy {
-		for j := range BitmapCopy[i] {
-			BitmapCopy[i][j] = !BitmapCopy[i][j]
-		}
-	}
-
 	return NewGrid(width, height, BitmapCopy)
 }
 
@@ -73,73 +73,128 @@ func (g *Grid) ToImage() *imageutil.Image {
 		copy(CellsCopy[i], row)
 	}
 
-	for i := range CellsCopy {
-		for j := range CellsCopy[i] {
-			CellsCopy[i][j] = !CellsCopy[i][j]
-		}
-	}
-
 	return imageutil.NewImage(CellsCopy, g.Width, g.Height)
 }
 
-func (g *Grid) ToStable(config *config.Config) bool {
+func (g *Grid) ToStandImage(config *config.Config) image.Image {
+	originalContainer := image.NewRGBA(image.Rect(0, 0, g.Width, g.Height))
+	for y := 0; y < g.Height; y++ {
+		for x := 0; x < g.Width; x++ {
+			if g.Cells[y][x] == imageutil.WHITE {
+				originalContainer.Set(x, y, color.White)
+			}
+		}
+	}
+
+	resizedImg := imaging.Resize(originalContainer, config.QRSize, config.QRSize, imaging.NearestNeighbor)
+	return resizedImg
+}
+
+func (g *Grid) ToStable(config *config.Config) (bool, error) {
 	historyHash := make(map[string]struct{}, 0)
 	inputChannel := make(chan chanInArg, bufferSize)
+	imageChannel := make(chan image.Image, bufferSize)
 	var wg sync.WaitGroup
 	var packet sync.WaitGroup
-	defer close(inputChannel)
 
 	wg.Add(consumerCount)
 	for i := 0; i < consumerCount; i++ {
 		go consumer(inputChannel, &wg, &packet)
 	}
 
+	if config.SaveVideo {
+		wg.Add(1)
+		go videoMaker(config.Signature, imageChannel, &wg)
+	}
+
 	for i := 0; i < config.MaxIter; i++ {
+		if config.SaveVideo {
+			standardImage := g.ToStandImage(config)
+			imageChannel <- standardImage
+		}
+
 		g.NextGeneration(inputChannel, &packet)
 
 		curHash := MatrixToHash(g.Cells)
 		if _, ok := historyHash[curHash]; ok {
+			close(inputChannel)
+			close(imageChannel)
+			wg.Wait()
 			fmt.Println("after", i, "round, we reach stable")
-			return true
+			return true, nil
 		}
 		historyHash[curHash] = struct{}{}
 	}
 
-	return false
+	close(inputChannel)
+	close(imageChannel)
+	wg.Wait()
+
+	return false, nil
+}
+
+func videoMaker(videoName string, ch <-chan image.Image, wg *sync.WaitGroup) {
+	defer wg.Done()
+	cmd := exec.Command("ffmpeg",
+		"-y",
+		"-f", "image2pipe",
+		"-vcodec", "png",
+		"-r", "30",
+		"-i", "pipe:0",
+		"-c:v", "libx264",
+		"-preset", "superfast",
+		"-threads", "4",
+		fmt.Sprintf(videoName+".mp4"),
+	)
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		fmt.Println("无法获取 FFmpeg 标准输入管道:", err)
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		fmt.Println("无法启动 FFmpeg:", err)
+		return
+	}
+
+	writer := bufio.NewWriter(stdin)
+
+	for img := range ch {
+		if err := png.Encode(writer, img); err != nil {
+			fmt.Println("写入图片失败")
+			return
+		}
+	}
+
+	if err := writer.Flush(); err != nil {
+		fmt.Println("刷新缓冲区失败:", err)
+		return
+	}
+
+	if err := stdin.Close(); err != nil {
+		fmt.Println("关闭 FFmpeg 标准输入管道失败:", err)
+		return
+	}
+
+	if err := cmd.Wait(); err != nil {
+		fmt.Println("执行失败")
+		return
+	}
 }
 
 func consumer(input <-chan chanInArg, wg *sync.WaitGroup, packet *sync.WaitGroup) {
 	defer wg.Done()
 
 	for item := range input {
-		black := safeCell(item.PvCells, item.X, item.Y, item.Width, item.Height)
-		item.OutCells[item.Y][item.X] = black
+		item.OutCells[item.Y][item.X] = cellNextColor(item.PvCells, item.X, item.Y, item.Width, item.Height)
 		packet.Done()
 	}
 }
 
-func (g *Grid) GetCell(x, y int) bool {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	if validPosition(x, y, g.Cells) {
-		return g.Cells[y][x]
-	}
-	return false
-}
-
-func (g *Grid) SetCell(x, y int, value bool) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	if y >= 0 && y < g.Height && x >= 0 && x < g.Width {
-		g.Cells[y][x] = value
-	}
-}
-
-func safeCell(cells [][]bool, x, y int, width, height int) bool {
+func cellNextColor(cells [][]bool, x, y int, width, height int) bool {
 	if !validPosition(x, y, cells) {
-		return false
+		return imageutil.WHITE
 	}
 
 	neighbors := 0
@@ -154,17 +209,21 @@ func safeCell(cells [][]bool, x, y int, width, height int) bool {
 				continue
 			}
 
-			if cells[y+j][x+i] {
+			if cells[y+j][x+i] == imageutil.BLACK {
 				neighbors++
 			}
 		}
 	}
 
-	if cells[y][x] {
+	if cells[y][x] == imageutil.BLACK {
 		neighbors--
 	}
 
-	return neighbors == 3 || (cells[y][x] && neighbors == 2)
+	if neighbors == 3 || (cells[y][x] && neighbors == 2) {
+		return imageutil.BLACK
+	}
+
+	return imageutil.WHITE
 }
 
 func (g *Grid) NextGeneration(intput chan<- chanInArg, packet *sync.WaitGroup) {

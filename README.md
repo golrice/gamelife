@@ -1,135 +1,102 @@
-# GameLife: QR Code and Conway's Game of Life Integration
+# Game of Life
 
-- [中文版本](README_zh.md)
-- [English version](README.md)
+[![Go Version](https://img.shields.io/badge/go-1.20+-blue.svg)](https://golang.org/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Overview
-
-GameLife is a project that combines QR code generation with Conway's Game of Life, a cellular automaton devised by mathematician John Conway. The program generates a QR code based on a user-provided signature, converts it into a grid representation, and applies the rules of Conway's Game of Life to evolve the grid until it reaches a stable state or completes a predefined number of iterations.
-
-The project demonstrates how to integrate QR code generation, image processing, and cellular automata in Go (Golang). It also provides functionality to save intermediate states of the grid as images.
-
----
+GameLife is a project based on Conway's Game of Life, incorporating QR code generation and image processing functionalities. Users can generate a QR code by inputting a signature, convert it into the initial state of the Game of Life, and observe its evolution process.
 
 ## Features
 
-1. **QR Code Generation**:
-   - Generates a QR code based on a user-provided signature.
-   - Supports customization of QR code size and output format (e.g., PNG, JPEG).
-
-2. **Image Processing**:
-   - Converts the QR code image into a binary grid representation.
-   - Detects the module size of the QR code for further processing.
-
-3. **Conway's Game of Life**:
-   - Applies the rules of Conway's Game of Life to the grid derived from the QR code.
-   - Evolves the grid until it reaches a stable state or completes a maximum number of iterations.
-   - Saves intermediate states of the grid as images for visualization.
-
-4. **Concurrency and Stability Detection**:
-   - Uses a thread-safe grid structure to handle concurrent operations.
-   - Detects periodic oscillations or stable states using hashing techniques.
-
-5. **Customizable Configuration**:
-   - Allows users to configure parameters such as QR code size, output format, and maximum iterations.
+- **QR Code Generation**: Generate QR codes based on user-provided signatures.
+- **Game of Life Evolution**: Use the QR code as the initial state to run Conway's Game of Life simulation.
+- **Image Saving**: Supports saving results as PNG or JPEG image files.
+- **Video Recording** (Optional): Record the evolution process of the Game of Life and generate a video file.
 
 ---
 
-## Installation
+## Directory Structure
+
+```
+gamelife/
+├── cmd/                # Main program entry
+│   └── main.go         # Main function
+├── internal/           # Internal modules
+│   ├── config/         # Configuration management
+│   ├── engine/         # Game of Life engine
+│   ├── imageutil/      # Image processing utilities
+│   └── qrcode/         # QR code generation module
+└── Makefile            # Build and management tasks
+```
+
+---
+
+## Installation and Execution
 
 ### Prerequisites
 
 - Go 1.20 or higher
-- Git
+- FFmpeg (if video generation is required)
 
-### Steps
+### Execution Instructions
 
-1. Clone the repository:
+1. **Basic Commands**:
    ```bash
-   git clone https://github.com/golrice/gamelife.git
-   cd gamelife
+   make build    # Compile the project
+   make run      # Run the program (use ARGS="..." when parameters are needed)
+   make clean    # Clean build files and generated media files
+   make test     # Run tests
    ```
 
-2. Install dependencies:
+2. **Run with Parameters**:
    ```bash
-   go mod tidy
+   make run ARGS="-signature=myseed -size=300 -video"
    ```
 
-3. Build the project:
+3. **Cross-Compilation**:
    ```bash
-   go build -o gamelife cmd/main.go
+   make build-linux    # Compile for Linux
+   make build-windows  # Compile for Windows
    ```
 
-4. Run the executable:
+4. **Dependency Check**:
    ```bash
-   ./gamelife -signature "YourSignature" -format "png" -size 255
+   make check-ffmpeg   # Check video generation dependencies
    ```
+
+5. **Install to System Path**:
+   ```bash
+   make install        # Install to $GOPATH/bin
+   ```
+
+#### Parameter Description
+
+| Parameter    | Default  | Description                                                        |
+| ------------ | -------- | ------------------------------------------------------------------ |
+| `-signature` | Required | User signature, used to generate QR code                           |
+| `-format`    | `"png"`  | Output image format (supports `png` and `jpeg`)                    |
+| `-size`      | `255`    | Image size (QR code dimensions)                                    |
+| `-iter`      | `20`     | Maximum number of iterations                                       |
+| `-video`     | `false`  | Whether to save the evolution process as a video (requires FFmpeg) |
 
 ---
 
-## Usage
+## Example
 
-### Command-Line Arguments
-
-| Flag         | Description                               | Default Value |
-| ------------ | ----------------------------------------- | ------------- |
-| `-signature` | User-defined signature for the QR code    | Required      |
-| `-format`    | Output image format (e.g., `png`, `jpeg`) | `png`         |
-| `-size`      | Size of the QR code                       | `255`         |
-
-### Example
-
-Generate a QR code with the signature "HelloWorld", save it as a PNG file, and apply Conway's Game of Life:
+Generate a QR code with a signature and run the Game of Life evolution:
 
 ```bash
-./gamelife -signature "HelloWorld" -format "png" -size 255
+./bin/gamelife -signature "HelloGameLife" -format "png" -size 512 -iter 30 -video
 ```
 
-This will:
-1. Generate a QR code for "HelloWorld".
-2. Convert the QR code into a grid.
-3. Apply Conway's Game of Life rules to the grid.
-4. Save intermediate and final states as PNG files.
-
----
-
-## Project Structure
-
-The project is organized into the following directories:
-
-- **`cmd/`**: Contains the main entry point (`main.go`).
-- **`internal/config/`**: Handles configuration management.
-- **`internal/engine/`**: Implements Conway's Game of Life logic and grid operations.
-- **`internal/imageutil/`**: Provides utilities for image processing and saving.
-- **`internal/qrcode/`**: Handles QR code generation.
-
----
-
-## Key Components
-
-### 1. QR Code Generation (`internal/qrcode/qrcode.go`)
-
-Generates a QR code using the `skip2/go-qrcode` library. The QR code is represented as an `image.Image` object.
-
-### 2. Image Processing (`internal/imageutil/util.go`)
-
-Converts images to grids, detects module sizes, and saves images in various formats (PNG, JPEG).
-
-### 3. Conway's Game of Life (`internal/engine/grid.go`)
-
-Implements the rules of Conway's Game of Life:
-- A live cell with 2 or 3 live neighbors survives.
-- A dead cell with exactly 3 live neighbors becomes alive.
-- All other cells die or remain dead.
-
-The grid evolves iteratively, and stability is detected using hashing to identify periodic patterns.
-
-### 4. Configuration Management (`internal/config/config.go`)
-
-Provides a centralized configuration structure with default values for QR code size, output format, and iteration limits.
+Output files:
+- Initial QR code image: `HelloGameLife.png`
+- Evolved image: `HelloGameLife_after.png`
+- Evolution process video (if enabled): `HelloGameLife.mp4`
 
 ---
 
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+Hope you enjoy this project! 🎮

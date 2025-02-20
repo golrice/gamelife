@@ -1,135 +1,102 @@
-# GameLife: QR码与康威生命游戏的结合
+# 生命游戏
 
-- [中文版本](README_zh.md)
-- [English version](README.md)
+[![Go Version](https://img.shields.io/badge/go-1.20+-blue.svg)](https://golang.org/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## 概述
+GameLife 是一个基于 Conway's Game of Life 的项目，结合了二维码生成和图像处理功能。用户可以通过输入签名生成二维码，并将其转换为 Game of Life 的初始状态，观察其演化过程。
 
-GameLife 是一个将 QR 码生成与康威生命游戏（Conway's Game of Life）相结合的项目。程序根据用户提供的签名生成 QR 码，将其转换为网格表示，并应用康威生命游戏的规则演化网格，直到达到稳定状态或完成预定义的迭代次数。
+## 功能特性
 
-该项目展示了如何在 Go（Golang）中集成 QR 码生成、图像处理和细胞自动机。它还提供了保存网格中间状态为图像的功能。
-
----
-
-## 功能
-
-1. **QR 码生成**：
-   - 根据用户提供的签名生成 QR 码。
-   - 支持自定义 QR 码尺寸和输出格式（如 PNG、JPEG）。
-
-2. **图像处理**：
-   - 将 QR 码图像转换为二进制网格表示。
-   - 检测 QR 码的模块大小以便进一步处理。
-
-3. **康威生命游戏**：
-   - 对从 QR 码生成的网格应用康威生命游戏的规则。
-   - 演化网格，直到达到稳定状态或完成最大迭代次数。
-   - 保存网格的中间状态为图像以供可视化。
-
-4. **并发与稳定性检测**：
-   - 使用线程安全的网格结构处理并发操作。
-   - 使用哈希技术检测周期性振荡或稳定状态。
-
-5. **可配置参数**：
-   - 允许用户配置 QR 码尺寸、输出格式和最大迭代次数等参数。
+- **二维码生成**：根据用户提供的签名生成二维码。
+- **Game of Life 演化**：将二维码作为初始状态，运行 Conway's Game of Life 模拟。
+- **图像保存**：支持将结果保存为 PNG 或 JPEG 格式的图像文件。
+- **视频录制**（可选）：记录 Game of Life 的演化过程并生成视频文件。
 
 ---
 
-## 安装
+## 目录结构
+
+```
+gamelife/
+├── cmd/                # 主程序入口
+│   └── main.go         # 主函数
+├── internal/           # 内部模块
+│   ├── config/         # 配置管理
+│   ├── engine/         # Game of Life 引擎
+│   ├── imageutil/      # 图像处理工具
+│   └── qrcode/         # 二维码生成模块
+└── Makefile            # 构建和管理任务
+```
+
+---
+
+## 安装与运行
 
 ### 前置条件
 
 - Go 1.20 或更高版本
-- Git
+- FFmpeg（如果需要生成视频）
 
-### 步骤
+### 执行指令
 
-1. 克隆仓库：
+1. **基本命令**：
    ```bash
-   git clone https://github.com/golrice/gamelife.git
-   cd gamelife
+   make build    # 编译项目
+   make run      # 运行程序（需要参数时使用 ARGS="..."）
+   make clean    # 清理构建文件和生成的媒体文件
+   make test     # 运行测试
    ```
 
-2. 安装依赖：
+2. **带参数运行**：
    ```bash
-   go mod tidy
+   make run ARGS="-signature=myseed -size=300 -video"
    ```
 
-3. 构建项目：
+3. **交叉编译**：
    ```bash
-   go build -o gamelife cmd/main.go
+   make build-linux    # 编译 Linux 版本
+   make build-windows  # 编译 Windows 版本
    ```
 
-4. 运行可执行文件：
+4. **依赖检查**：
    ```bash
-   ./gamelife -signature "您的签名" -format "png" -size 255
+   make check-ffmpeg   # 检查视频生成依赖
    ```
+
+5. **安装到系统路径**：
+   ```bash
+   make install        # 安装到 $GOPATH/bin
+   ```
+
+#### 参数说明
+
+| 参数         | 默认值  | 描述                                  |
+| ------------ | ------- | ------------------------------------- |
+| `-signature` | 必填    | 用户签名，用于生成二维码              |
+| `-format`    | `"png"` | 输出图像格式（支持 `png` 和 `jpeg`）  |
+| `-size`      | `255`   | 图像大小（二维码尺寸）                |
+| `-iter`      | `20`    | 最大迭代次数                          |
+| `-video`     | `false` | 是否保存演化过程的视频（需要 FFmpeg） |
 
 ---
 
-## 使用方法
+## 示例
 
-### 命令行参数
-
-| 参数         | 描述                             | 默认值 |
-| ------------ | -------------------------------- | ------ |
-| `-signature` | 用于生成 QR 码的用户签名         | 必填   |
-| `-format`    | 输出图像格式（如 `png`、`jpeg`） | `png`  |
-| `-size`      | QR 码的尺寸                      | `255`  |
-
-### 示例
-
-生成一个带有签名 "HelloWorld" 的 QR 码，保存为 PNG 文件，并应用康威生命游戏：
+生成一个带有签名的二维码，并运行 Game of Life 演化：
 
 ```bash
-./gamelife -signature "HelloWorld" -format "png" -size 255
+./bin/gamelife -signature "HelloGameLife" -format "png" -size 512 -iter 30 -video
 ```
 
-该命令将：
-1. 为 "HelloWorld" 生成 QR 码。
-2. 将 QR 码转换为网格。
-3. 对网格应用康威生命游戏规则。
-4. 保存中间状态和最终状态为 PNG 文件。
-
----
-
-## 项目结构
-
-项目按以下目录组织：
-
-- **`cmd/`**: 包含主入口点 (`main.go`)。
-- **`internal/config/`**: 负责配置管理。
-- **`internal/engine/`**: 实现康威生命游戏逻辑和网格操作。
-- **`internal/imageutil/`**: 提供图像处理和保存的工具。
-- **`internal/qrcode/`**: 负责 QR 码生成。
-
----
-
-## 关键组件
-
-### 1. QR 码生成 (`internal/qrcode/qrcode.go`)
-
-使用 [`skip2/go-qrcode`](https://github.com/skip2/go-qrcode) 库生成 QR 码。QR 码被表示为 `image.Image` 对象。
-
-### 2. 图像处理 (`internal/imageutil/util.go`)
-
-将图像转换为网格，检测模块大小，并以各种格式（如 PNG、JPEG）保存图像。
-
-### 3. 康威生命游戏 (`internal/engine/grid.go`)
-
-实现康威生命游戏的规则：
-- 活细胞有 2 或 3 个活邻居时存活。
-- 死细胞有恰好 3 个活邻居时复活。
-- 所有其他细胞死亡或保持死亡。
-
-网格会迭代演化，使用哈希技术检测周期性模式以判断是否达到稳定状态。
-
-### 4. 配置管理 (`internal/config/config.go`)
-
-提供集中式配置结构，默认值包括 QR 码尺寸、输出格式和迭代限制。
+输出文件：
+- 初始二维码图像：`HelloGameLife.png`
+- 演化后的图像：`HelloGameLife_after.png`
+- 演化过程视频（如果启用）：`HelloGameLife.mp4`
 
 ---
 
 ## 许可证
 
 本项目采用 MIT 许可证。详情请参阅 [LICENSE](LICENSE) 文件。
+
+希望你喜欢这个项目！🎮

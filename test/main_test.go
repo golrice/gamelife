@@ -3,6 +3,7 @@ package test
 import (
 	"flag"
 	"fmt"
+	"os/exec"
 	"testing"
 
 	"github.com/golrice/gamelife/internal/config"
@@ -16,13 +17,14 @@ func TestMain(t *testing.T) {
 	formatFlag := "png"
 	sizeFlag := 255
 	maxiterFlag := 100000
+	savevideoFlag := false
 	flag.Parse()
 
-	config := config.NewConfig(signatureFlag, formatFlag, sizeFlag, maxiterFlag)
+	config := config.NewConfig(signatureFlag, formatFlag, sizeFlag, maxiterFlag, savevideoFlag)
 
 	bitmap, err := qrcode.GenerateQrcode(config)
 	if err != nil {
-		panic(err)
+		t.Error(err)
 	}
 
 	img := imageutil.NewImage(bitmap, len(bitmap), len(bitmap[0]))
@@ -30,15 +32,22 @@ func TestMain(t *testing.T) {
 
 	err = imageutil.SaveImg(img, config)
 	if err != nil {
-		panic(err)
+		t.Error(err)
 	}
 
 	grid := engine.ImageToGrid(img)
-	if ok := grid.ToStable(config); !ok {
+	if ok, err := grid.ToStable(config); !ok || err != nil {
 		fmt.Println("can't iter to stable")
 	}
 
 	img = grid.ToImage()
 	config.Signature = config.Signature + "_after"
 	imageutil.SaveImg(img, config)
+}
+
+func TestFfmpeg(t *testing.T) {
+	cmd := exec.Command("ffmpeg")
+	if err := cmd.Run(); err != nil {
+		t.Error("can't run")
+	}
 }
